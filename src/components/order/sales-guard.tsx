@@ -15,7 +15,7 @@ export default function SalesGuard({
   adminOnly?: boolean;
   children: ReactNode;
 }) {
-  const { user, offline } = useAuth();
+  const { user, offline, salesMember, membershipLoading, businessAccount } = useAuth();
 
   if (offline) {
     return (
@@ -25,10 +25,35 @@ export default function SalesGuard({
     );
   }
 
-  if (adminOnly && !isAdminEmail(user?.email)) {
+  const isAdmin = isAdminEmail(user?.email);
+  const isBusinessAccount = businessAccount || salesMember !== null;
+  if (adminOnly && !isAdmin) {
     return (
       <Notice icon={<ShieldAlert className="size-8 text-muted-foreground" />} title="只有管理者能使用這一頁">
-        待下單區只開放給管理者。如果你是管理者，請確認登入的是管理者的信箱。
+        這個管理頁只開放給管理者帳號。
+      </Notice>
+    );
+  }
+
+  if (!isAdmin && membershipLoading) {
+    return <p className="py-16 text-center text-sm text-muted-foreground">正在確認帳號權限…</p>;
+  }
+
+  if (!isAdmin && isBusinessAccount && salesMember?.status !== "active") {
+    const title = salesMember?.status === "disabled" ? "此業務帳號已停用" : "帳號等待管理者核准";
+    return (
+      <Notice icon={<ShieldAlert className="size-8 text-muted-foreground" />} title={title}>
+        {salesMember?.status === "disabled"
+          ? "目前無法使用業務下單或讀取業務資料。如需恢復權限，請聯絡管理者。"
+          : "註冊已完成；管理者核准後即可使用業務下單介面。"}
+      </Notice>
+    );
+  }
+
+  if (!isAdmin && !isBusinessAccount) {
+    return (
+      <Notice icon={<ShieldAlert className="size-8 text-muted-foreground" />} title="尚未加入業務帳號">
+        請聯絡管理者將此帳號加入業務名單並核准。
       </Notice>
     );
   }

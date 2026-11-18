@@ -11,6 +11,7 @@ import {
   WINDOW_SHAPE_LABELS,
   balanceOf,
   mountText,
+  supportsLeadWeight,
   type PayMethod,
   type PrintVariant,
   type SizeUnit,
@@ -20,7 +21,7 @@ import {
 import { cn } from "@/lib/utils";
 import { SalesText } from "@/components/order/sales-emphasis";
 
-const money = (n: number): string => (n > 0 ? fmtMoney(n) : "—");
+const money = (n: number): string => (n > 0 ? fmtMoney(n) : "");
 
 /**
  * 尺寸草圖：橫桿（寬）＋中間直桿（高）。
@@ -47,45 +48,45 @@ function TFigure({ width, height, widthUnit, heightUnit, compact, win, order, sc
   );
   // 腳長：位置依窗型決定；沒填時顯示「腳」佔位
   const sideText = (index: number, x: number, y: number, anchor: "start" | "end") => (
-    <text x={x} y={y} textAnchor={anchor} fontSize={11} fill="currentColor">
+    <text x={x} y={y} textAnchor={anchor} fontSize={14} fill="currentColor">
       {win.shapeLengths[index]
         ? <SalesText svg text={`${win.shapeLengths[index]}${widthSymbol}`} field={`window:${win.id}:shapeLength:${index}`} marks={marks} />
         : "腳"}
     </text>
   );
   return (
-    <div className="shrink-0 self-start text-foreground" style={{ width: `${(compact ? 33 : 42) * scale}mm` }}>
+    <div className="shrink-0 self-start text-foreground" style={{ width: `${(compact ? 36 : 45) * scale}mm` }}>
       <svg viewBox="0 0 180 120" role="img" aria-label={WINDOW_SHAPE_LABELS[win.shape]} className="w-full overflow-visible">
         {win.shape === "t" && (
           <>
             {line(8, 42, 112, 42)}{line(60, 42, 60, 112)}
-            {widthText(13, 60, 30)}
-            {heightText(13, 68, 82)}
+            {widthText(17, 60, 30)}
+            {heightText(17, 68, 82)}
           </>
         )}
         {win.shape === "l-left" && (
           <>
             {line(44, 42, 150, 42)}{line(44, 42, 44, 82)}{line(104, 42, 104, 112)}
-            {widthText(12, 97, 30)}
+            {widthText(16, 97, 30)}
             {sideText(0, 38, 66, "end")}
-            {heightText(12, 110, 82)}
+            {heightText(16, 110, 82)}
           </>
         )}
         {win.shape === "l-right" && (
           <>
             {line(30, 42, 136, 42)}{line(136, 42, 136, 82)}{line(76, 42, 76, 112)}
-            {widthText(12, 83, 30)}
+            {widthText(16, 83, 30)}
             {sideText(0, 142, 66, "start")}
-            {heightText(12, 82, 102)}
+            {heightText(16, 82, 82)}
           </>
         )}
         {win.shape === "figure-eight" && (
           <>
             {line(40, 42, 140, 42)}{line(40, 42, 40, 82)}{line(140, 42, 140, 82)}{line(90, 42, 90, 112)}
-            {widthText(12, 90, 30)}
+            {widthText(16, 90, 30)}
             {sideText(0, 34, 66, "end")}
             {sideText(1, 146, 66, "start")}
-            {heightText(12, 96, 96)}
+            {heightText(16, 96, 96)}
           </>
         )}
       </svg>
@@ -122,10 +123,15 @@ function WindowCell({
     .join("　");
   // 編號長得像 3-1 就代表和別的窗位是同一窗
   const grouped = label.includes("-");
-  const showPrice = variant === "keep";
+  const measure = variant === "measure";
+  // 丈量單：沒填的欄位什麼都不印，留白讓業務邊跟客人討論邊手寫
+  const empty = measure ? "" : "—";
+  const showPrice = variant !== "install";
+  // 加鉛條只有布、紗才有；換成別的品項時就算舊資料還勾著也不印
+  const showLead = w.leadWeight && supportsLeadWeight(w.product);
   const field = (name: string, text: string) => text
     ? <SalesText text={text} field={`window:${w.id}:${name}`} marks={order.printEmphasis} />
-    : "—";
+    : empty;
   return (
     <div
       className={cn(
@@ -140,9 +146,25 @@ function WindowCell({
           <span className={cn("mr-1 font-normal", grouped ? "text-destructive" : "text-muted-foreground")}>
             {label}.
           </span>
-          {field("product", w.product)}
-          {w.colorCode && <>：{field("colorCode", w.colorCode)}</>}
+          {measure && !w.product && <span className="font-normal text-muted-foreground">品項：</span>}
+          {w.product && field("product", w.product)}
+          {(w.colorCode || w.fireProof || showLead) && (
+            <>
+              ：
+              {w.fireProof ? (
+                // 開防焰證明：色號整段紅字，後面自動加（防焰證明）
+                <span className="text-destructive">
+                  {w.colorCode && field("colorCode", w.colorCode)}
+                  (防焰證明)
+                </span>
+              ) : (
+                w.colorCode && field("colorCode", w.colorCode)
+              )}
+              {showLead && <span className="ml-1.5 text-destructive">加鉛條</span>}
+            </>
+          )}
         </p>
+        {measure && !w.product && !w.colorCode && <Line label="色號">{null}</Line>}
         {w.shape !== "t" && <Line label="窗型">{field("shape", WINDOW_SHAPE_LABELS[w.shape])}</Line>}
         <Line label="空間">
           {field("space", w.space)}
@@ -189,6 +211,16 @@ const valueCell = (compact: boolean) => cn(cellBase, "break-words", compact ? "p
 
 const payText = (method: PayMethod) => (method ? PAY_LABELS[method] : "");
 
+/** 沒填的欄位留一段空白（不印底線），方便之後用手寫。 */
+function HandwriteBlank({ compact, short = false }: { compact: boolean; short?: boolean }) {
+  const width = short ? (compact ? "w-[16mm]" : "w-[22mm]") : compact ? "w-[34mm]" : "w-[44mm]";
+  return (
+    <span aria-hidden="true" className={cn("inline-block align-bottom", width)}>
+      &nbsp;
+    </span>
+  );
+}
+
 function OrderHeader({
   order,
   compact,
@@ -199,22 +231,31 @@ function OrderHeader({
   variant: PrintVariant;
 }) {
   const balance = balanceOf(order.total, order.deposit);
+  const measure = variant === "measure";
+  // 丈量單：沒填的欄位留一段空白（不印底線），之後手寫
   const field = (name: string, text: string) => text
     ? <SalesText text={text} field={`header:${name}`} marks={order.printEmphasis} />
-    : "—";
+    : measure ? <HandwriteBlank compact={compact} short /> : "—";
   const L = labelCell(compact);
   const V = valueCell(compact);
   return (
     <div className={cn("flex flex-col", compact ? "gap-1" : "gap-1.5")}>
-      <div className="flex flex-wrap items-end justify-between gap-x-4">
+      <div className="flex items-end justify-between gap-x-4 whitespace-nowrap">
         <p>
           <span className="mr-3 border border-foreground px-1.5 font-semibold">{VARIANT_LABELS[variant]}</span>
           <span className="font-semibold">{field("kind", KIND_LABELS[order.kind])}</span>
           <span className="ml-3">負責人：{field("person", order.person)}</span>
         </p>
-        <div className="flex flex-wrap justify-start gap-x-4 gap-y-0.5">
+        <div className="flex flex-col items-start gap-y-0.5">
           <p>預計安裝時間：{field("installTime", order.installTime)}</p>
-          {order.scheduledInstallTime && <p>排定安裝時間：{field("scheduledInstallTime", order.scheduledInstallTime)}</p>}
+          <p>
+            排定安裝時間：
+            {order.scheduledInstallTime ? (
+              field("scheduledInstallTime", order.scheduledInstallTime)
+            ) : (
+              <HandwriteBlank compact={compact} />
+            )}
+          </p>
         </div>
       </div>
 
@@ -292,14 +333,16 @@ export default function SalesPage({
       {pageNo === 1 ? (
         <OrderHeader order={order} compact={compact} variant={variant} />
       ) : (
-        <p className="flex justify-between border-b pb-1 font-medium">
+        <p className="flex justify-between whitespace-nowrap border-b pb-1 font-medium">
           <span>
             <span className="mr-2 border border-foreground px-1 text-[0.85em]">{VARIANT_LABELS[variant]}</span>
             客戶名：{order.customerName || "—"}
             <span className="ml-3">日期：{order.orderDate || "—"}（續）</span>
           </span>
           <span className="ml-3">預計安裝：{order.installTime || "—"}</span>
-          {order.scheduledInstallTime && <span className="ml-3">排定安裝：{order.scheduledInstallTime}</span>}
+          <span className="ml-3">
+            排定安裝：{order.scheduledInstallTime || <HandwriteBlank compact={compact} />}
+          </span>
         </p>
       )}
 
