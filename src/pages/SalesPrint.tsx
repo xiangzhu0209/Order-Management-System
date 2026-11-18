@@ -12,7 +12,6 @@ import {
   type PrintVariant,
 } from "@/lib/sales-types";
 import { downloadSheetPng, paperWidthPx } from "@/lib/order-utils";
-import { printPage } from "@/lib/print";
 import { useAuth } from "@/hooks/use-auth";
 import SalesGuard from "@/components/order/sales-guard";
 import SalesPage from "@/components/order/sales-sheet";
@@ -32,6 +31,27 @@ const readPaper = (): Paper => {
   }
 };
 
+/** 內容大小：縮小可讓整張單擠進一張紙（預覽、列印、匯出圖片一致）。 */
+const SCALE_KEY = "sales-print-scale-v1";
+const SCALE_OPTIONS = [
+  { value: "0.7", label: "70%" },
+  { value: "0.75", label: "75%" },
+  { value: "0.8", label: "80%" },
+  { value: "0.85", label: "85%" },
+  { value: "0.9", label: "90%" },
+  { value: "0.95", label: "95%" },
+  { value: "1", label: "100%（標準）" },
+  { value: "1.1", label: "110%" },
+];
+const readScale = (): string => {
+  try {
+    const v = window.localStorage.getItem(SCALE_KEY);
+    return SCALE_OPTIONS.some((o) => o.value === v) ? (v as string) : "1";
+  } catch {
+    return "1";
+  }
+};
+
 function PrintInner() {
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -43,9 +63,8 @@ function PrintInner() {
     [params],
   );
   const idsKey = ids.join(",");
-  const [paper, setPaper] = useState<Paper>(readPaper);
-  const [exporting, setExporting] = useState(false);
-  const [zoom, setZoom] = useState(1);
+  // 留存單（完整）或安裝單（不含牌價），由網址 type 決定，預設留存單
+  const variant: PrintVariant = params.get("type") === "install" ? "install" : "keep";
   const changeVariant = (v: PrintVariant) =>
     setParams(
       (prev) => {
@@ -56,6 +75,18 @@ function PrintInner() {
       { replace: true },
     );
 
+  const [paper, setPaper] = useState<Paper>(readPaper);
+  const [exporting, setExporting] = useState(false);
+  const [scale, setScale] = useState(readScale);
+  const changeScale = (v: string) => {
+    setScale(v);
+    try {
+      window.localStorage.setItem(SCALE_KEY, v);
+    } catch {
+      /* 無法寫入時忽略 */
+    }
+  };
+  const [zoom, setZoom] = useState(1);
   const fitRef = useRef<HTMLDivElement>(null);
   const sheetsRef = useRef<HTMLDivElement>(null);
   const selectionRef = useRef<Range | null>(null);
@@ -86,16 +117,6 @@ function PrintInner() {
     enabled: ids.length > 0,
     queryFn: () => fetchSalesOrdersByIds(ids),
   });
-
-  // 種類由網址 type 決定：留存單（完整）／安裝單（不含牌價）／丈量單（空欄位留白手寫）。
-  // 沒指定時：選到的單全是丈量單就預設印丈量單，否則印留存單。
-  const typeParam = params.get("type");
-  const variant: PrintVariant =
-    typeParam === "install" || typeParam === "measure" || typeParam === "keep"
-      ? typeParam
-      : orders.length > 0 && orders.every((o) => o.measureOnly)
-        ? "measure"
-        : "keep";
 
   // 預覽依畫面寬度縮放，手機上也看得到整張紙（列印時一律還原成原尺寸）
   const paperWidth = paperWidthPx(paper);
@@ -221,7 +242,6 @@ function PrintInner() {
                 <SelectContent>
                   <SelectItem value="keep">{VARIANT_LABELS.keep}</SelectItem>
                   <SelectItem value="install">{VARIANT_LABELS.install}</SelectItem>
-                  <SelectItem value="measure">{VARIANT_LABELS.measure}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -237,6 +257,21 @@ function PrintInner() {
                 </SelectContent>
               </Select>
             </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-sm text-muted-foreground">內容大小</span>
+              <Select value={scale} onValueChange={changeScale}>
+                <SelectTrigger className="h-10 w-36">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {SCALE_OPTIONS.map((o) => (
+                    <SelectItem key={o.value} value={o.value}>
+                      {o.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             {orders.length === 1 && (
               <Button variant="outline" onClick={() => navigate(`/sales/${orders[0].id}/edit`)}>
                 <Edit className="size-4" /> {orders[0].status === "ordered" && !isAdmin ? "查看" : "修改"}
@@ -246,7 +281,7 @@ function PrintInner() {
               <ImageDown className="size-4" />
               {exporting ? "產生中…" : pages.length > 1 ? `匯出圖片（${pages.length} 張）` : "匯出圖片"}
             </Button>
-            <Button disabled={pages.length === 0} onClick={() => printPage({ label: "匯出圖片", run: () => void exportImages() })}>
+            <Button disabled={pages.length === 0} onClick={() => window.print()}>
               <Printer className="size-4" /> 列印／存成 PDF
             </Button>
           </div>
@@ -303,6 +338,7 @@ function PrintInner() {
                     pageCount={p.pageCount}
                     paper={paper}
                     variant={variant}
+                    scale={Number(scale)}
                   />
                 </div>
               ))}

@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Calculator, ChevronDown, FileSpreadsheet, Printer, Table2 } from "lucide-react";
+import { Calculator, FileSpreadsheet, Printer, Table2 } from "lucide-react";
 import { fetchAllOrderItems, fetchVendors, setItemsSettled } from "@/lib/db";
 import type { OrderItem } from "@/lib/types";
 import {
@@ -17,9 +17,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import { printPage } from "@/lib/print";
 
 interface Group {
   key: string;
@@ -66,7 +64,6 @@ export default function Reconciliation() {
   const [vendorId, setVendorId] = useState<string>("all");
   const [sortBy, setSortBy] = useState<SortKey>("date-asc");
   const [status, setStatus] = useState<StatusKey>("all");
-  const [expanded, setExpanded] = useState<string | null>(null);
   // 剛勾選的明細先記在這裡，畫面馬上反應，雲端寫入完成後才交還給查詢結果
   const [pending, setPending] = useState<Record<string, boolean>>({});
 
@@ -128,7 +125,8 @@ export default function Reconciliation() {
   const groups: Group[] = useMemo(() => {
     const map = new Map<string, Group>();
     for (const row of monthItems) {
-      const key = `${row.vendorId ?? ""}||${row.productName}||${row.size ?? ""}||${row.spec ?? ""}`;
+      // 每一筆明細各自一列，同色號也不合併
+      const key = row.id;
       const existing = map.get(key);
       if (existing) {
         existing.rows.push(row);
@@ -209,27 +207,30 @@ export default function Reconciliation() {
    */
   const exportSummary = () => {
     const rows: CsvRow[] = [
-      ["結清", "廠商", "色號", "尺寸", "規格", "數量合計", "單價", "明細筆數"],
+      ["結清", "日期", "單號", "客戶", "廠商", "色號", "尺寸", "規格", "數量", "單價", "備註"],
       ...visibleGroups.map((g) => [
         groupStatus(g, isSettled),
+        g.rows[0].orderDate,
+        g.rows[0].orderNo,
+        g.rows[0].customerName,
         g.vendorName,
         g.productName,
         g.size,
         g.spec,
         g.totalQty,
         g.priceLabel,
-        g.rows.length,
+        g.rows[0].notes ?? "",
       ]),
-      ["總計", "", "", "", "", totalQty, "", visibleGroups.length],
+      ["總計", "", "", "", "", "", "", "", totalQty, "", ""],
     ];
-    downloadCsv(`月對帳_${month}_${vendorName}_統計表.csv`, rows);
-    toast(`已匯出統計表：${visibleGroups.length} 項・數量合計 ${totalQty}`);
+    downloadCsv(`月對帳_${month}_${vendorName}_清單.csv`, rows);
+    toast(`已匯出清單：${visibleGroups.length} 項・數量合計 ${totalQty}`);
   };
 
   /** 匯出「明細」：每一筆叫貨（日期／單號／客戶）都列出，方便逐筆核對。 */
   const exportDetail = () => {
     const rows: CsvRow[] = [
-      ["結清", "日期", "單號", "客戶", "廠商", "色號", "尺寸", "用量", "規格", "數量", "單價", "小計"],
+      ["結清", "日期", "單號", "客戶", "廠商", "色號", "尺寸", "用量", "規格", "數量", "單價", "小計", "備註"],
       ...visibleGroups.flatMap((g) =>
         g.rows.map((r) => [
           isSettled(r) ? "已結清" : "未結清",
@@ -244,9 +245,10 @@ export default function Reconciliation() {
           toNum(r.quantity),
           toNum(r.unitPrice),
           toNum(r.quantity) * toNum(r.unitPrice),
+          r.notes ?? "",
         ]),
       ),
-      ["總計", "", "", "", "", "", "", "", "", totalQty, "", totalAmount],
+      ["總計", "", "", "", "", "", "", "", "", totalQty, "", totalAmount, ""],
     ];
     downloadCsv(`月對帳_${month}_${vendorName}_明細.csv`, rows);
     toast(`已匯出明細：共 ${visibleGroups.reduce((n, g) => n + g.rows.length, 0)} 筆`);
@@ -258,7 +260,7 @@ export default function Reconciliation() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">月對帳</h1>
           <p className="mt-1.5 text-sm text-muted-foreground">
-            依品項統計每月向廠商叫貨的數量與單價，並記錄是否已結清
+            每筆叫貨明細各一列（同色號不合併），顯示備註並記錄是否已結清
           </p>
         </div>
         <div className="flex flex-col items-start gap-1.5 sm:items-end">
@@ -268,12 +270,12 @@ export default function Reconciliation() {
               disabled={visibleGroups.length === 0}
               onClick={exportSummary}
             >
-              <FileSpreadsheet className="size-4" /> 匯出統計表
+              <FileSpreadsheet className="size-4" /> 匯出清單
             </Button>
             <Button variant="outline" disabled={visibleGroups.length === 0} onClick={exportDetail}>
               <Table2 className="size-4" /> 匯出明細
             </Button>
-            <Button variant="outline" onClick={() => printPage()}>
+            <Button variant="outline" onClick={() => window.print()}>
               <Printer className="size-4" /> 列印對帳單
             </Button>
           </div>
@@ -293,7 +295,7 @@ export default function Reconciliation() {
               </CardDescription>
             </div>
             <span className="inline-flex items-center rounded-full border border-gold/40 bg-gold/15 px-2.5 py-0.5 text-xs font-medium text-gold-text">
-              共 {visibleGroups.length} 項・已結清 {settledGroupCount} 項・總數量 {totalQty}
+              共 {visibleGroups.length} 筆・已結清 {settledGroupCount} 筆・總數量 {totalQty}
             </span>
           </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -366,7 +368,7 @@ export default function Reconciliation() {
               全部取消
             </Button>
             <span className="text-xs text-muted-foreground">
-              只作用在目前顯示的項目；勾選主列＝整列都算結清，展開後可單筆調整
+              只作用在目前顯示的項目；每一列各自勾選結清
             </span>
           </div>
         </CardHeader>
@@ -384,31 +386,26 @@ export default function Reconciliation() {
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-14">結清</TableHead>
+                    <TableHead>日期</TableHead>
+                    <TableHead>單號</TableHead>
+                    <TableHead>客戶</TableHead>
                     <TableHead>廠商</TableHead>
                     <TableHead>色號</TableHead>
                     <TableHead>尺寸</TableHead>
                     <TableHead>規格</TableHead>
-                    <TableHead className="text-right">數量合計</TableHead>
+                    <TableHead className="text-right">數量</TableHead>
                     <TableHead className="text-right">單價</TableHead>
+                    <TableHead>備註</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {visibleGroups.map((g) => (
-                    <FragmentRow
+                    <LineRow
                       key={g.key}
                       group={g}
-                      expanded={expanded === g.key}
-                      onToggle={() => setExpanded(expanded === g.key ? null : g.key)}
                       isSettled={isSettled}
-                      onSetGroupSettled={(settled) =>
-                        applySettled(
-                          g.rows
-                            .filter((r) => isSettled(r) !== settled)
-                            .map((r) => ({ id: r.id, settled })),
-                        )
-                      }
-                      onSetLineSettled={(row, settled) =>
-                        applySettled([{ id: row.id, settled }])
+                      onSetSettled={(settled) =>
+                        applySettled([{ id: g.rows[0].id, settled }])
                       }
                     />
                   ))}
@@ -416,7 +413,7 @@ export default function Reconciliation() {
               </Table>
               <div className="mt-3 flex items-center justify-between border-t-2 border-primary/20 pt-4">
                 <span className="text-sm text-muted-foreground print:text-base">
-                  總計 {visibleGroups.length} 項（已結清 {settledGroupCount} 項）
+                  總計 {visibleGroups.length} 筆（已結清 {settledGroupCount} 筆）
                 </span>
                 <span className="text-sm text-muted-foreground print:text-base">
                   總數量 <span className="font-semibold tabular-nums text-foreground">{totalQty}</span>
@@ -430,101 +427,40 @@ export default function Reconciliation() {
   );
 }
 
-function FragmentRow({
+function LineRow({
   group,
-  expanded,
-  onToggle,
   isSettled,
-  onSetGroupSettled,
-  onSetLineSettled,
+  onSetSettled,
 }: {
   group: Group;
-  expanded: boolean;
-  onToggle: () => void;
   isSettled: (it: OrderItem) => boolean;
-  onSetGroupSettled: (settled: boolean) => void;
-  onSetLineSettled: (row: OrderItem, settled: boolean) => void;
+  onSetSettled: (settled: boolean) => void;
 }) {
-  const done = group.rows.filter(isSettled).length;
-  const allDone = done === group.rows.length;
-  const settledQty = group.rows
-    .filter(isSettled)
-    .reduce((n, r) => n + toNum(r.quantity), 0);
-
+  const r = group.rows[0];
+  const settled = isSettled(r);
   return (
-    <>
-      <TableRow className="cursor-pointer" onClick={onToggle}>
-        <TableCell>
-          <span className="flex items-center gap-1.5">
-            <span onClick={(e) => e.stopPropagation()}>
-              <Checkbox
-                aria-label="整列結清"
-                className="print:hidden"
-                checked={allDone ? true : done > 0 ? "indeterminate" : false}
-                onCheckedChange={(v) => onSetGroupSettled(v === true)}
-              />
-            </span>
-            <span className="hidden print:inline">{settleMark(allDone)}</span>
-            {!allDone && done > 0 && (
-              <span className="text-xs text-muted-foreground print:hidden">
-                {done}/{group.rows.length}
-              </span>
-            )}
-          </span>
-        </TableCell>
-        <TableCell className="max-w-[7rem] truncate">{group.vendorName}</TableCell>
-        <TableCell>
-          <span className="inline-flex items-center gap-1.5 font-medium">
-            <ChevronDown className={cn("size-4 text-muted-foreground transition-transform", expanded && "rotate-180")} />
-            {group.productName}
-          </span>
-        </TableCell>
-        <TableCell>{group.size || "—"}</TableCell>
-        <TableCell className="text-muted-foreground">{group.spec || "—"}</TableCell>
-        <TableCell className="text-right tabular-nums">{group.totalQty}</TableCell>
-        <TableCell className="text-right tabular-nums">{group.priceLabel || "—"}</TableCell>
-      </TableRow>
-      {expanded && (
-        <TableRow className="bg-muted/40">
-          <TableCell colSpan={7} className="px-4 py-2">
-            <div className="grid grid-cols-[1.6rem_1.1fr_1.2fr_1.2fr_0.7fr_0.7fr] gap-2 pb-1.5 text-xs font-medium text-muted-foreground">
-              <span>結清</span>
-              <span>日期</span>
-              <span>單號</span>
-              <span>客戶</span>
-              <span className="text-right">數量</span>
-              <span className="text-right">單價</span>
-            </div>
-            {group.rows.map((r) => {
-              const lineSettled = isSettled(r);
-              return (
-                <div
-                  key={r.id}
-                  className="grid grid-cols-[1.6rem_1.1fr_1.2fr_1.2fr_0.7fr_0.7fr] items-center gap-2 border-t py-1.5 text-sm"
-                >
-                  <span>
-                    <Checkbox
-                      aria-label="這筆已結清"
-                      className="print:hidden"
-                      checked={lineSettled}
-                      onCheckedChange={(v) => onSetLineSettled(r, v === true)}
-                    />
-                    <span className="hidden print:inline">{settleMark(lineSettled)}</span>
-                  </span>
-                  <span>{r.orderDate}</span>
-                  <span className="font-mono text-xs">{r.orderNo}</span>
-                  <span className="truncate">{r.customerName || "—"}</span>
-                  <span className="text-right tabular-nums">{r.quantity}</span>
-                  <span className="text-right tabular-nums">{fmtMoney(toNum(r.unitPrice))}</span>
-                </div>
-              );
-            })}
-            <p className="mt-2 border-t pt-2 text-xs text-muted-foreground print:text-sm">
-              已結清 {done}／{group.rows.length} 筆・已結清數量 {settledQty}／{group.totalQty}
-            </p>
-          </TableCell>
-        </TableRow>
-      )}
-    </>
+    <TableRow>
+      <TableCell>
+        <Checkbox
+          aria-label="這筆已結清"
+          className="print:hidden"
+          checked={settled}
+          onCheckedChange={(v) => onSetSettled(v === true)}
+        />
+        <span className="hidden print:inline">{settleMark(settled)}</span>
+      </TableCell>
+      <TableCell className="whitespace-nowrap">{r.orderDate}</TableCell>
+      <TableCell className="font-mono text-xs">{r.orderNo}</TableCell>
+      <TableCell className="max-w-[7rem] truncate">{r.customerName || "—"}</TableCell>
+      <TableCell className="max-w-[7rem] truncate">{group.vendorName}</TableCell>
+      <TableCell className="font-medium">{group.productName}</TableCell>
+      <TableCell>{group.size || "—"}</TableCell>
+      <TableCell className="text-muted-foreground">{group.spec || "—"}</TableCell>
+      <TableCell className="text-right tabular-nums">{group.totalQty}</TableCell>
+      <TableCell className="text-right tabular-nums">{group.priceLabel || "—"}</TableCell>
+      <TableCell className="min-w-[8rem] whitespace-pre-wrap break-words text-muted-foreground">
+        {r.notes || "—"}
+      </TableCell>
+    </TableRow>
   );
 }

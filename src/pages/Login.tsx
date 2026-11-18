@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { Navigate } from "react-router-dom";
-import { CloudOff, ReceiptText } from "lucide-react";
+import { CloudOff, MailCheck, ReceiptText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -26,6 +26,7 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [offlineName, setOfflineName] = useState("");
+  const [sentTo, setSentTo] = useState("");
 
   if (loading || (user && membershipLoading)) return null;
   if (user) {
@@ -56,6 +57,7 @@ export default function Login() {
         return;
       }
       setMode("login");
+      setSentTo(email.trim());
       toast("重設信已寄出，請收信（也看一下垃圾郵件匣）", { duration: 6000 });
       return;
     }
@@ -110,6 +112,15 @@ export default function Login() {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+            {mode === "login" && sentTo && (
+              <div className="flex items-start gap-2 rounded-md border border-primary/30 bg-primary/5 p-3 text-xs leading-relaxed text-foreground">
+                <MailCheck className="mt-0.5 size-4 shrink-0 text-primary" />
+                <span>
+                  重設信已寄到 <b className="break-all">{sentTo}</b>。若幾分鐘內沒收到，請看垃圾郵件匣；
+                  寄件者是 noreply@…firebaseapp.com。
+                </span>
+              </div>
+            )}
             {mode === "signup" && (
               <div className="flex flex-col gap-2">
                 <Label htmlFor="name">姓名 *</Label>

@@ -1,8 +1,10 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { Check, CheckCheck, Inbox, LockKeyhole, Pencil, Printer, RotateCcw, Search, X } from "lucide-react";
+import { Check, CheckCheck, Inbox, LockKeyhole, Pencil, Printer, RotateCcw, Search, Trash2, X } from "lucide-react";
 import {
+  deleteSalesOrder,
+  fetchAllSalesOrders,
   fetchSalesOrdersByStatus,
   fetchSalesOrdersWithEditRequests,
   lockSalesOrderEdits,
@@ -17,12 +19,25 @@ import SalesGuard from "@/components/order/sales-guard";
 import StatusBadge from "@/components/order/sales-status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 
-type Tab = "submitted" | "ordered" | "modifications";
+type Tab = "submitted" | "ordered" | "modifications" | "all";
+
+const ALL_PEOPLE = "__all__";
 
 const stamp = (iso: string): string => {
   if (!iso) return "";
@@ -44,6 +59,8 @@ function InboxInner() {
   const [tab, setTab] = useState<Tab>("submitted");
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [person, setPerson] = useState(ALL_PEOPLE);
+  const [toDelete, setToDelete] = useState<SalesOrder | null>(null);
 
   const { data: pending = [], isLoading: loadingPending, isError: pendingError, error: pendingErr } = useQuery({
     queryKey: ["sales-inbox", "submitted"],
@@ -59,18 +76,33 @@ function InboxInner() {
     queryFn: fetchSalesOrdersWithEditRequests,
   });
 
-  const list = tab === "submitted" ? pending : tab === "ordered" ? done : modificationRequests;
-  const loading = tab === "submitted" ? loadingPending : tab === "ordered" ? loadingDone : loadingRequests;
-  const isError = tab === "submitted" ? pendingError : tab === "ordered" ? doneError : requestsError;
-  const error = tab === "submitted" ? pendingErr : tab === "ordered" ? doneErr : requestsErr;
+  const { data: everything = [], isLoading: loadingAll, isError: allError, error: allErr } = useQuery({
+    queryKey: ["sales-inbox", "all"],
+    enabled: tab === "all",
+    queryFn: fetchAllSalesOrders,
+  });
+
+  const list =
+    tab === "submitted" ? pending : tab === "ordered" ? done : tab === "all" ? everything : modificationRequests;
+  const loading =
+    tab === "submitted" ? loadingPending : tab === "ordered" ? loadingDone : tab === "all" ? loadingAll : loadingRequests;
+  const isError =
+    tab === "submitted" ? pendingError : tab === "ordered" ? doneError : tab === "all" ? allError : requestsError;
+  const error = tab === "submitted" ? pendingErr : tab === "ordered" ? doneErr : tab === "all" ? allErr : requestsErr;
+
+  const people = useMemo(
+    () => [...new Set(everything.map((o) => o.person.trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, "zh-TW")),
+    [everything],
+  );
 
   const shown = useMemo(() => {
     const kw = search.trim().toLowerCase();
-    if (!kw) return list;
-    return list.filter((o) =>
-      [o.customerName, o.phone, o.address, o.person].join(" ").toLowerCase().includes(kw),
-    );
-  }, [list, search]);
+    return list.filter((o) => {
+      if (tab === "all" && person !== ALL_PEOPLE && o.person.trim() !== person) return false;
+      if (!kw) return true;
+      return [o.customerName, o.phone, o.address, o.person].join(" ").toLowerCase().includes(kw);
+    });
+  }, [list, search, tab, person]);
 
   const shownIds = shown.map((o) => o.id);
   const selectedShown = shownIds.filter((id) => selected.has(id));
@@ -136,9 +168,20 @@ function InboxInner() {
     onError: (err) => toast(`鎖定失敗：${(err as Error).message}`),
   });
 
+  const removeOrder = useMutation({
+    mutationFn: (id: string) => deleteSalesOrder(id),
+    onSuccess: () => {
+      toast("已刪除這張單");
+      setToDelete(null);
+      refresh();
+    },
+    onError: (err) => toast(`刪除失敗：${(err as Error).message}`),
+  });
+
   const printIds = (ids: string[], type: "keep" | "install") =>
     navigate(`/sales/print?ids=${ids.join(",")}&type=${type}`);
-  const busy = markOrdered.isPending || reopen.isPending || reviewEdit.isPending || lockEdits.isPending;
+  const busy =
+    markOrdered.isPending || reopen.isPending || reviewEdit.isPending || lockEdits.isPending || removeOrder.isPending;
 
   const row = (o: SalesOrder) => (
     <Card key={o.id} className={selected.has(o.id) ? "border-primary/60" : undefined}>
@@ -164,8 +207,8 @@ function InboxInner() {
             <p className="mt-0.5 text-xs text-muted-foreground">
               {o.orderDate}
               {o.phone ? `・${o.phone}` : ""}
-              {tab === "submitted" && o.submittedAt ? `・送出 ${stamp(o.submittedAt)}` : ""}
-              {tab === "ordered" && o.orderedAt
+              {o.status === "submitted" && o.submittedAt ? `・送出 ${stamp(o.submittedAt)}` : ""}
+              {o.status === "ordered" && o.orderedAt
                 ? `・${stamp(o.orderedAt)} 由 ${o.orderedBy || "管理者"} 下單`
                 : ""}
               {tab === "modifications" && o.editRequestAt ? `・申請 ${stamp(o.editRequestAt)}` : ""}
@@ -206,11 +249,12 @@ function InboxInner() {
           <Button variant="outline" size="sm" onClick={() => navigate(`/sales/${o.id}/edit`)}>
             <Pencil className="size-4" /> 編輯
           </Button>
-          {tab === "submitted" ? (
+          {o.status === "submitted" && (
             <Button size="sm" disabled={busy} onClick={() => markOrdered.mutate([o.id])}>
               <CheckCheck className="size-4" /> 標記已下單
             </Button>
-          ) : (
+          )}
+          {o.status === "ordered" && (
             <Button variant="ghost" size="sm" disabled={busy} onClick={() => reopen.mutate([o.id])}>
               <RotateCcw className="size-4" /> 改回待下單
             </Button>
@@ -225,6 +269,15 @@ function InboxInner() {
               <LockKeyhole className="size-4" /> 重新鎖定修改
             </Button>
           )}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+            disabled={busy}
+            onClick={() => setToDelete(o)}
+          >
+            <Trash2 className="size-4" /> 刪除
+          </Button>
           </>
           )}
         </div>
@@ -237,7 +290,7 @@ function InboxInner() {
       <div>
         <h1 className="text-xl font-semibold tracking-tight">待下單區</h1>
         <p className="mt-0.5 text-sm text-muted-foreground">
-          管理業務送來的訂單、審核修改申請，並可列印、標記已下單或重新鎖定修改權限
+          管理所有業務的訂單：列印、標記已下單、審核修改申請、重新鎖定或刪除
         </p>
       </div>
 
@@ -248,14 +301,31 @@ function InboxInner() {
           setSelected(new Set());
         }}
       >
-        <TabsList className="grid h-auto w-full grid-cols-3">
+        <TabsList className="grid h-auto w-full grid-cols-4">
           <TabsTrigger value="submitted">待下單 {pending.length}</TabsTrigger>
           <TabsTrigger value="ordered">已下單</TabsTrigger>
           <TabsTrigger value="modifications">修改申請 {modificationRequests.length}</TabsTrigger>
+          <TabsTrigger value="all">全部單</TabsTrigger>
         </TabsList>
       </Tabs>
 
-      <div className="relative">
+      <div className="flex flex-col gap-2 sm:flex-row">
+        {tab === "all" && (
+          <Select value={person} onValueChange={setPerson}>
+            <SelectTrigger className="h-11 sm:w-44">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL_PEOPLE}>全部業務</SelectItem>
+              {people.map((name) => (
+                <SelectItem key={name} value={name}>
+                  {name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+        <div className="relative flex-1">
         <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
         <Input
           className="h-11 pl-9 text-base"
@@ -263,6 +333,7 @@ function InboxInner() {
           onChange={(e) => setSearch(e.target.value)}
           placeholder="搜尋客戶、電話、地址、負責人"
         />
+        </div>
       </div>
 
       {shown.length > 0 && tab !== "modifications" && (
@@ -297,7 +368,7 @@ function InboxInner() {
               >
                 <CheckCheck className="size-4" /> 標記已下單
               </Button>
-            ) : (
+            ) : tab === "ordered" ? (
               <Button
                 variant="ghost"
                 size="sm"
@@ -306,7 +377,7 @@ function InboxInner() {
               >
                 <RotateCcw className="size-4" /> 改回待下單
               </Button>
-            )}
+            ) : null}
           </div>
         </div>
       )}
@@ -326,11 +397,36 @@ function InboxInner() {
               ? "目前沒有待下單的單"
               : tab === "ordered"
                 ? "還沒有已下單的單"
-                : "目前沒有待審核的修改申請"}
+                : tab === "all"
+                  ? "還沒有任何業務單"
+                  : "目前沒有待審核的修改申請"}
         </div>
       ) : (
         <div className="flex flex-col gap-3">{shown.map(row)}</div>
       )}
+      <AlertDialog open={!!toDelete} onOpenChange={(open) => !open && setToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>刪除這張單？</AlertDialogTitle>
+            <AlertDialogDescription>
+              {toDelete?.customerName || "（未填客戶名）"}・負責人 {toDelete?.person || "—"}
+              ，刪除後無法復原，業務端也會看不到這張單。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={removeOrder.isPending}
+              onClick={(e) => {
+                e.preventDefault();
+                if (toDelete) removeOrder.mutate(toDelete.id);
+              }}
+            >
+              {removeOrder.isPending ? "刪除中…" : "確定刪除"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
