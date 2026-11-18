@@ -277,13 +277,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const resetPassword = useCallback(async (email: string) => {
+    const target = email.trim();
     try {
-      await sendPasswordResetEmail(auth, email.trim(), {
+      await sendPasswordResetEmail(auth, target, {
         url: `${appBaseUrl()}?mode=resetPassword`,
         handleCodeInApp: false,
       });
       return { error: null };
     } catch (error) {
+      const code = (error as { code?: unknown })?.code;
+      // 網址尚未加入授權網域時，退回 Firebase 預設的重設頁面，仍可寄信
+      if (code === "auth/unauthorized-continue-uri" || code === "auth/invalid-continue-uri") {
+        try {
+          await sendPasswordResetEmail(auth, target);
+          return { error: null };
+        } catch (fallbackError) {
+          return { error: toMessage(fallbackError) };
+        }
+      }
       return { error: toMessage(error) };
     }
   }, []);
