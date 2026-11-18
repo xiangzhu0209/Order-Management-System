@@ -18,6 +18,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { toast } from "sonner";
+import { printPage } from "@/lib/print";
 
 interface Group {
   key: string;
@@ -275,7 +276,7 @@ export default function Reconciliation() {
             <Button variant="outline" disabled={visibleGroups.length === 0} onClick={exportDetail}>
               <Table2 className="size-4" /> 匯出明細
             </Button>
-            <Button variant="outline" onClick={() => window.print()}>
+            <Button variant="outline" onClick={() => printPage()}>
               <Printer className="size-4" /> 列印對帳單
             </Button>
           </div>
