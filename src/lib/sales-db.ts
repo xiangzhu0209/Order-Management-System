@@ -47,8 +47,6 @@ function mapWindow(raw: unknown): SalesWindow {
     product: str(d.product),
     productCustom: d.productCustom === true,
     colorCode: str(d.colorCode),
-    leadWeight: d.leadWeight === true,
-    fireProof: d.fireProof === true,
     shape: pick(d.shape, ["t", "l-left", "l-right", "figure-eight"] as const, "t"),
     shapeLengths: Array.isArray(d.shapeLengths) ? d.shapeLengths.map(str).slice(0, 2) : [],
     widthUnit: pick(d.widthUnit ?? d.unit, ["cm", "tai"] as const, "cm"),
@@ -86,7 +84,6 @@ function mapOrder(id: string, d: DocumentData): SalesOrder {
     balanceMethod: pick(d.balanceMethod, PAY, ""),
     notes: str(d.notes),
     status: pick(d.status, STATUSES, "draft"),
-    measureOnly: d.measureOnly === true,
     editRequestStatus: pick(d.editRequestStatus, EDIT_REQUEST_STATUSES, ""),
     editRequestReason: str(d.editRequestReason),
     editRequestAt: str(d.editRequestAt),
@@ -130,6 +127,12 @@ export async function fetchSalesOrdersByStatus(status: SalesStatus): Promise<Sal
   return snap.docs.map((d) => mapOrder(d.id, d.data())).sort(byRecent);
 }
 
+/** 管理者用：全部業務的單（含草稿）。 */
+export async function fetchAllSalesOrders(): Promise<SalesOrder[]> {
+  const snap = await getDocs(collection(db, COLLECTION));
+  return snap.docs.map((d) => mapOrder(d.id, d.data())).sort(byRecent);
+}
+
 /** 管理者待審核的訂單修改申請。 */
 export async function fetchSalesOrdersWithEditRequests(): Promise<SalesOrder[]> {
   const snap = await getDocs(query(collection(db, COLLECTION), where("editRequestStatus", "==", "pending")));
@@ -165,7 +168,6 @@ const toData = (input: SalesOrderInput): DocumentData => ({
   depositMethod: input.depositMethod,
   balanceMethod: input.balanceMethod,
   notes: input.notes,
-    measureOnly: input.measureOnly,
     status: input.status,
     editRequestStatus: input.editRequestStatus,
     editRequestReason: input.editRequestReason,
