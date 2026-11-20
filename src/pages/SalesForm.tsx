@@ -20,6 +20,10 @@ import {
   type PayMethod,
   type SalesKind,
   type SalesOrderInput,
+  type TaxType,
+  type InvoiceType,
+  TAX_LABELS,
+  INVOICE_LABELS,
   type SalesStatus,
   type SalesWindow,
 } from "@/lib/sales-types";
@@ -47,6 +51,15 @@ import { toast } from "sonner";
 const PAY_OPTIONS = (Object.keys(PAY_LABELS) as Exclude<PayMethod, "">[]).map((value) => ({
   value,
   label: PAY_LABELS[value],
+}));
+
+const TAX_OPTIONS = (Object.keys(TAX_LABELS) as Exclude<TaxType, "">[]).map((value) => ({
+  value,
+  label: TAX_LABELS[value],
+}));
+const INVOICE_OPTIONS = (Object.keys(INVOICE_LABELS) as Exclude<InvoiceType, "">[]).map((value) => ({
+  value,
+  label: INVOICE_LABELS[value],
 }));
 
 interface SaveArgs {
@@ -80,6 +93,11 @@ function SalesFormInner() {
   const [depositMethod, setDepositMethod] = useState<PayMethod>("");
   const [balanceMethod, setBalanceMethod] = useState<PayMethod>("");
   const [notes, setNotes] = useState("");
+  const [keepNote, setKeepNote] = useState("");
+  const [taxType, setTaxType] = useState<TaxType>("");
+  const [invoiceType, setInvoiceType] = useState<InvoiceType>("");
+  const [invoiceTitle, setInvoiceTitle] = useState("");
+  const [invoiceTaxId, setInvoiceTaxId] = useState("");
   const [windows, setWindows] = useState<SalesWindow[]>(() => [newWindow()]);
   const [openIds, setOpenIds] = useState<Set<string>>(() => new Set());
   const [removeTarget, setRemoveTarget] = useState<string | null>(null);
@@ -129,6 +147,11 @@ function SalesFormInner() {
     setDepositMethod(existing.depositMethod);
     setBalanceMethod(existing.balanceMethod);
     setNotes(existing.notes);
+    setKeepNote(existing.keepNote);
+    setTaxType(existing.taxType);
+    setInvoiceType(existing.invoiceType);
+    setInvoiceTitle(existing.invoiceTitle);
+    setInvoiceTaxId(existing.invoiceTaxId);
     const list = existing.windows.length > 0 ? existing.windows : [newWindow()];
     setWindows(list);
     setOpenIds(new Set([list[0].id]));
@@ -216,6 +239,12 @@ function SalesFormInner() {
         depositMethod,
         balanceMethod,
         notes: notes.trim(),
+        keepNote: keepNote.trim(),
+        taxType,
+        // 只有「含稅」才會有發票資料；二聯只留抬頭，三聯留抬頭與統編
+        invoiceType: taxType === "incl" ? invoiceType : "",
+        invoiceTitle: taxType === "incl" && invoiceType ? invoiceTitle.trim() : "",
+        invoiceTaxId: taxType === "incl" && invoiceType === "three" ? invoiceTaxId.trim() : "",
         measureOnly,
         status: target,
         editRequestStatus: existing?.editRequestStatus ?? "",
@@ -476,6 +505,44 @@ function SalesFormInner() {
               placeholder="0"
             />
           </Field>
+          <Field label="稅別">
+            <Choice
+              value={taxType}
+              options={TAX_OPTIONS}
+              disabled={readOnly}
+              onChange={(v) => setTaxType(v as TaxType)}
+            />
+            {taxType === "incl" && (
+              <div className="flex flex-col gap-3 rounded-lg border border-dashed border-primary/50 bg-primary/5 p-3">
+                <Choice
+                  value={invoiceType}
+                  options={INVOICE_OPTIONS}
+                  disabled={readOnly}
+                  onChange={(v) => setInvoiceType(v as InvoiceType)}
+                />
+                {invoiceType && (
+                  <Input
+                    className="h-11 text-base"
+                    value={invoiceTitle}
+                    disabled={readOnly}
+                    onChange={(e) => setInvoiceTitle(e.target.value)}
+                    placeholder="發票抬頭"
+                  />
+                )}
+                {invoiceType === "three" && (
+                  <Input
+                    className="h-11 text-base"
+                    inputMode="numeric"
+                    maxLength={8}
+                    value={invoiceTaxId}
+                    disabled={readOnly}
+                    onChange={(e) => setInvoiceTaxId(digitsOnly(e.target.value))}
+                    placeholder="統一編號（8 碼）"
+                  />
+                )}
+              </div>
+            )}
+          </Field>
           <Field label="訂金">
             <Input
               className="h-11 text-base"
@@ -511,6 +578,16 @@ function SalesFormInner() {
               disabled={readOnly}
               onChange={(e) => setNotes(e.target.value)}
               placeholder="例如：急件、先送一半"
+            />
+          </Field>
+          <Field label="留存單訂單備註（只印在留存單，安裝單不會出現）">
+            <Textarea
+              rows={3}
+              className="text-base"
+              value={keepNote}
+              disabled={readOnly}
+              onChange={(e) => setKeepNote(e.target.value)}
+              placeholder="例如：客戶付款狀況、內部提醒"
             />
           </Field>
         </CardContent>
