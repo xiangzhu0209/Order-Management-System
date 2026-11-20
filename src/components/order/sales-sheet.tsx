@@ -2,7 +2,9 @@ import type { ReactNode } from "react";
 import { fmtMoney } from "@/lib/order-utils";
 import {
   KIND_LABELS,
-  MULTIPLIER_PRODUCT,
+  supportsMultiplier,
+  TAX_LABELS,
+  INVOICE_LABELS,
   PANEL_LABELS,
   PAY_LABELS,
   SIDE_LABELS,
@@ -179,7 +181,7 @@ function WindowCell({
         {showPrice && (
           <Line label="牌價">
             {field("listPrice", w.listPrice ? fmtMoney(Number(w.listPrice)) : "")}
-            {w.product === MULTIPLIER_PRODUCT && (
+            {supportsMultiplier(w.product) && (
               <span className="ml-3">
                 <span className="text-muted-foreground">倍數：</span>
                 {field("multiplier", w.multiplier)}
@@ -272,7 +274,15 @@ function OrderHeader({
         </div>
         <div className="grid w-[38%] shrink-0 grid-cols-[auto_minmax(0,1fr)] border-b border-r">
           <div className={L}>總價</div>
-          <div className={cn(V, "text-left tabular-nums")}>{field("total", money(order.total))}</div>
+          <div className={cn(V, "text-left tabular-nums")}>
+            {field("total", money(order.total))}
+            {order.taxType && (
+              <span className="ml-2 whitespace-nowrap font-semibold">
+                {TAX_LABELS[order.taxType]}
+                {order.taxType === "incl" && order.invoiceType ? `（${INVOICE_LABELS[order.invoiceType]}）` : ""}
+              </span>
+            )}
+          </div>
           <div className={L}>訂金</div>
           <div className={cn(V, "flex justify-start gap-2 tabular-nums")}>
             <span>{field("deposit", money(order.deposit))}</span>
@@ -286,10 +296,30 @@ function OrderHeader({
         </div>
       </div>
 
+      {order.taxType === "incl" && order.invoiceType && (
+        <div className="flex flex-wrap items-baseline gap-x-8 gap-y-0.5 border border-foreground/60 px-2 py-1">
+          <span className="min-w-0 break-words">
+            <span className="font-medium">發票抬頭：</span>
+            {order.invoiceTitle ? field("invoiceTitle", order.invoiceTitle) : "—"}
+          </span>
+          {order.invoiceType === "three" && (
+            <span className="whitespace-nowrap">
+              <span className="font-medium">統一編號：</span>
+              {order.invoiceTaxId ? field("invoiceTaxId", order.invoiceTaxId) : "—"}
+            </span>
+          )}
+        </div>
+      )}
       <div className="min-h-8 break-words border border-foreground/60 px-2 py-1">
         <span className="font-medium">訂單備註：</span>
         {field("notes", order.notes)}
       </div>
+      {variant === "keep" && order.keepNote && (
+        <div className="break-words border border-foreground/60 px-2 py-1">
+          <span className="font-medium">留存單備註：</span>
+          {field("keepNote", order.keepNote)}
+        </div>
+      )}
     </div>
   );
 }

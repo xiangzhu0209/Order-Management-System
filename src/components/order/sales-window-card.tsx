@@ -11,7 +11,7 @@ import {
   CUSTOM_PRODUCT_VALUE,
   SHAPE_SIDE_LABELS,
   MOUNT_LABELS,
-  MULTIPLIER_PRODUCT,
+  supportsMultiplier,
   PANEL_LABELS,
   ROOM_SUGGESTIONS,
   SALES_PRODUCTS,
@@ -183,7 +183,7 @@ export default function WindowCard({
                   else onChange({
                     productCustom: false,
                     product: v,
-                    ...(v === MULTIPLIER_PRODUCT ? {} : { multiplier: "" }),
+                    ...(supportsMultiplier(v) ? {} : { multiplier: "" }),
                     ...(supportsLeadWeight(v) ? {} : { leadWeight: false }),
                   });
                 }}
@@ -313,7 +313,7 @@ export default function WindowCard({
                 placeholder="牌價"
               />
             </Field>
-            {win.product === MULTIPLIER_PRODUCT && (
+            {supportsMultiplier(win.product) && (
               <Field label="倍數">
                 <Input
                   className={inputClass}
