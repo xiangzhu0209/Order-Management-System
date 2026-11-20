@@ -16,6 +16,8 @@ import { db } from "./firebase";
 import {
   newWindowId,
   type PayMethod,
+  type TaxType,
+  type InvoiceType,
   type SalesOrder,
   type SalesEditRequestStatus,
   type SalesOrderInput,
@@ -36,6 +38,8 @@ const pick = <T extends string>(v: unknown, allowed: readonly T[], fallback: T):
   typeof v === "string" && (allowed as readonly string[]).includes(v) ? (v as T) : fallback;
 
 const PAY: readonly PayMethod[] = ["", "cash", "transfer"];
+const TAXES: readonly TaxType[] = ["", "excl", "incl"];
+const INVOICES: readonly InvoiceType[] = ["", "two", "three"];
 const STATUSES: readonly SalesStatus[] = ["draft", "submitted", "ordered"];
 const EDIT_REQUEST_STATUSES: readonly SalesEditRequestStatus[] = ["", "pending", "approved", "rejected"];
 
@@ -85,6 +89,11 @@ function mapOrder(id: string, d: DocumentData): SalesOrder {
     depositMethod: pick(d.depositMethod, PAY, ""),
     balanceMethod: pick(d.balanceMethod, PAY, ""),
     notes: str(d.notes),
+    keepNote: str(d.keepNote),
+    taxType: pick(d.taxType, TAXES, ""),
+    invoiceType: pick(d.invoiceType, INVOICES, ""),
+    invoiceTitle: str(d.invoiceTitle),
+    invoiceTaxId: str(d.invoiceTaxId),
     status: pick(d.status, STATUSES, "draft"),
     measureOnly: d.measureOnly === true,
     editRequestStatus: pick(d.editRequestStatus, EDIT_REQUEST_STATUSES, ""),
@@ -171,6 +180,11 @@ const toData = (input: SalesOrderInput): DocumentData => ({
   depositMethod: input.depositMethod,
   balanceMethod: input.balanceMethod,
   notes: input.notes,
+  keepNote: input.keepNote,
+  taxType: input.taxType,
+  invoiceType: input.invoiceType,
+  invoiceTitle: input.invoiceTitle,
+  invoiceTaxId: input.invoiceTaxId,
     measureOnly: input.measureOnly,
     status: input.status,
     editRequestStatus: input.editRequestStatus,

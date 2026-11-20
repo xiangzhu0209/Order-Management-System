@@ -8,6 +8,8 @@
 export type SalesKind = "company" | "sales";
 export type SalesStatus = "draft" | "submitted" | "ordered";
 export type PayMethod = "" | "cash" | "transfer";
+export type TaxType = "" | "excl" | "incl";
+export type InvoiceType = "" | "two" | "three";
 export type PanelType = "" | "single" | "double";
 export type SideType = "" | "left" | "right";
 export type MountType = "" | "ceiling" | "wall" | "direct";
@@ -110,6 +112,13 @@ export interface SalesOrder {
   depositMethod: PayMethod;
   balanceMethod: PayMethod;
   notes: string;
+  /** 留存單訂單備註：只印在留存單，不會出現在安裝單 */
+  keepNote: string;
+  /** 總價含稅／未稅；含稅才有發票聯式與抬頭、統編 */
+  taxType: TaxType;
+  invoiceType: InvoiceType;
+  invoiceTitle: string;
+  invoiceTaxId: string;
   status: SalesStatus;
   /**
    * 丈量單：只記客戶資料、尺寸與鎖點的草稿，其他欄位等確認下單再補。
@@ -159,8 +168,12 @@ export const SALES_PRODUCTS: string[] = [
 export const LEAD_WEIGHT_PRODUCTS: string[] = ["布", "紗"];
 export const supportsLeadWeight = (product: string): boolean => LEAD_WEIGHT_PRODUCTS.includes(product);
 
-/** 只有這個品項才需要填倍數。 */
-export const MULTIPLIER_PRODUCT = "布";
+/** 只有這些品項才需要填倍數。 */
+export const MULTIPLIER_PRODUCTS: string[] = ["布", "紗"];
+export const supportsMultiplier = (product: string): boolean => MULTIPLIER_PRODUCTS.includes(product);
+
+export const TAX_LABELS: Record<Exclude<TaxType, "">, string> = { excl: "未稅", incl: "含稅" };
+export const INVOICE_LABELS: Record<Exclude<InvoiceType, "">, string> = { two: "二聯", three: "三聯" };
 export const CUSTOM_PRODUCT_VALUE = "__custom_product__";
 
 export const UNIT_LABELS: Record<SizeUnit, string> = { cm: "公分", tai: "台尺" };
